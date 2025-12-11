@@ -24,7 +24,7 @@ Native macOS menu bar app to monitor Claude Code token usage and cost in real ti
 ### Pro/Max mode (example)
 ```
 ┌────────────────────────────────────────┐
-│ ▊▊▊  CCBuddy   Pro              10s   │
+│ ▊▊▊  CCBuddy   Pro               10s   │
 ├────────────────────────────────────────┤
 │  Session Progress                 35%  │
 │  ████████████░░░░░░░░░░░░░░░░░░░░░░░░  │
