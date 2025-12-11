@@ -1,0 +1,46 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.hmap
+*.mode1v3
+*.mode2v3
+*.pbxuser
+*.perspectivev3
+
+# Build artifacts
+build/
+Products/
+*.app
+*.dSYM
+*.dSYM.zip
+*.ipa
+*.pkg
+*.dmg
+*.xcarchive
+
+# Package managers
+Pods/
+Carthage/Build/
+
+# Tooling / environment
+.env
+.env.*
+.idea/
+.vscode/
+
+# Logs
+*.log
+
