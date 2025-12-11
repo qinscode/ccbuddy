@@ -1,6 +1,6 @@
 # CCBuddy - Claude Code Usage Monitor
 
-A native macOS menu bar app to monitor your Claude Code usage in real-time.
+Native macOS menu bar app to monitor Claude Code token usage and cost in real time. Runs locally (no network), supports Pro/Max (5-hour window) and API (pay-as-you-go) modes, and uses a glass-effect popover UI.
 
 ![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9+-orange)
@@ -8,22 +8,20 @@ A native macOS menu bar app to monitor your Claude Code usage in real-time.
 
 ## Features
 
-- **Real-time Monitoring**: Track your Claude Code token usage in real-time
-- **Dual Mode Support**:
-  - **Pro/Max Plan**: 5-hour rolling window with usage percentage and time remaining
-  - **API Mode**: Pay-as-you-go with daily, weekly, monthly, and all-time cost tracking
-- **Cost Tracking**: See estimated costs and projected spending
-- **Multi-Model Display**: Shows all Claude models used (Opus 4.5, Sonnet 4, Haiku, etc.)
-- **Glass UI Design**: Beautiful translucent interface with customizable transparency
-- **Menu Bar Integration**: Quick access from your macOS menu bar
-- **Auto Refresh**: Configurable refresh intervals (1s, 5s, 10s, 30s, 1min, 5min)
-- **File Watching**: Detects changes to Claude Code logs instantly
-- **Customizable Font Size**: Small, Medium, or Large text options
-- **Privacy First**: All data stays local, no network requests
+- Real-time monitoring: FileWatcher (~0.5s) plus periodic mod-time check (default 10s) and manual refresh
+- Dual modes:
+  - Pro/Max: 5-hour rolling window, usage %, time remaining, burn rate, projected cost
+  - API: Today/week/month/all-time cost, no time-based limits
+- Cost tracking: Estimated + projected spending with tiered pricing support
+- Multi-model display: Opus, Sonnet, Haiku models, deduped by request/message ids
+- Glass UI: Translucent popover with history charts (daily/weekly/monthly)
+- Menu bar integration: Multiple display modes (percentage, tokens, cost, icon)
+- Configurable: Refresh interval (1s/5s/10s/30s/60s/manual), glass opacity, material style, font size
+- Privacy-first: All parsing and calculations are local; no network access
 
 ## Screenshots
 
-### Pro/Max Mode
+### Pro/Max mode (example)
 ```
 ┌────────────────────────────────────────┐
 │ ▊▊▊  CCBuddy   Pro              10s   │
@@ -42,59 +40,70 @@ A native macOS menu bar app to monitor your Claude Code usage in real-time.
 └────────────────────────────────────────┘
 ```
 
-### API Mode
+### API mode (example)
 ```
-┌────────────────────────────────────────┐
-│ ▊▊▊  CCBuddy   API              10s   │
-├────────────────────────────────────────┤
-│  📄 Tokens Used              55.5M     │
-│  🕐 Today                   $74.04     │
-│  📅 This Week              $243.27     │
-│  📆 This Month             $243.27     │
-│  💵 All Time               $549.12     │
-│  💻 Model           Claude Opus 4.5    │
-│                     Claude Sonnet 4    │
-├────────────────────────────────────────┤
-│  ↻ Refresh   ⚙ Settings   ⏻ Quit      │
-└────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│ ▊▊▊  CCBuddy                API                 8 secs ago │
+├────────────────────────────────────────────────────────────┤
+│  📄 Tokens Used                                100.8M      │
+│  🕐 Today                                     $101.31      │
+│  📅 This Week                                 $419.27      │
+│  📆 This Month                                $803.25      │
+│  💵 All Time                                 $1022.41      │
+│                                                            │
+│  💻 Model                          Claude Haiku 4.5        │
+│                                    Claude Opus 4.5         │
+│                                  Claude Sonnet 4.5         │
+├────────────────────────────────────────────────────────────┤
+│  Usage History                Daily   Weekly   Monthly     │
+│                                                            │
+│   150M ┤                        ████ 143.5M                │
+│   120M ┤                                   █ 100.8M        │
+│    90M ┤              ████ 96.8M                           │
+│    60M ┤        ████ 88.2M                                 │
+│    30M ┤                    █ 22.6M                        │
+│     0  ┼───────────────────────────────────────────────────│
+│         12/5   12/6   12/7   12/8   12/9   12/10   Today   │
+│                                                            │
+│  Totals: 452.0M tokens · $531.1525 cost                    │
+├────────────────────────────────────────────────────────────┤
+│  ↻ Refresh           ⚙ Settings              ⏻ Quit        │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
-- Claude Code installed and configured
-- Swift 5.9+ (for building from source)
+- Claude Code installed/configured
+- Swift 5.9+ (to build from source)
 
 ## Installation
 
-### Build from Source
-
-1. Clone the repository:
+### Build from source
 ```bash
 git clone https://github.com/anthropics/ccbuddy-app.git
 cd ccbuddy-app
-```
-
-2. Build with Swift Package Manager:
-```bash
 swift build -c release
-```
-
-3. Run the app:
-```bash
 swift run
 ```
 
-Or copy the built binary to your Applications folder.
-
-## How It Works
-
-CCBuddy reads Claude Code's local JSONL log files located at:
-```
-~/.claude/projects/
+### Build a DMG (optional)
+```bash
+./create-icon.sh   # first time only
+./build-dmg.sh
+open CCBuddy-1.0.0.dmg
 ```
 
-Each session is stored as a JSONL file containing message history with token usage information:
+## How it works
+
+Data lives at `~/.claude/projects/`.
+
+1) FileWatcher marks data dirty on any JSONL change (~0.5s).  
+2) Timer (default 10s) runs a quick mod-time check if not already dirty.  
+3) JSONLParser loads sessions; UsageCalculator computes stats with tiered pricing.  
+4) UsageViewModel caches sessions and publishes formatted data for SwiftUI views.
+
+Each message line looks like:
 
 ```json
 {
@@ -113,28 +122,17 @@ Each session is stored as a JSONL file containing message history with token usa
 }
 ```
 
-## Configuration
+## Settings
 
-Access settings from the popover menu → Settings:
+Open the popover → Settings:
 
-### General
-- **Usage Mode**: Pro/Max Plan or API (Pay-as-you-go)
-- **Launch at Login**: Start automatically when you log in
-- **Refresh Interval**: 10s / 30s / 1min / 5min / Manual
-- **Menu Bar Display**: Percentage / Tokens / Cost / Icon only
+- Usage mode: Pro/Max or API
+- Refresh interval: 1s / 5s / 10s / 30s / 60s / Manual (default 10s)
+- Menu bar display: Percentage / Tokens / Cost / Icon
+- Glass: opacity slider, material style
+- Font size: Small / Medium / Large
 
-### Appearance
-- **Glass Transparency**: 0-100% transparency level
-- **Material Style**: Ultra Thin / Thin / Regular / Thick / Ultra Thick
-- **Font Size**: Small / Medium / Large
-
-### Notifications
-- **Enable Alerts**: Get notified at usage thresholds
-- **Alert Threshold**: 50% / 75% / 90%
-
-## Token Pricing
-
-CCBuddy uses the official Anthropic pricing (as of December 2024):
+## Token pricing (LiteLLM 2025)
 
 | Model | Input | Output | Cache Write | Cache Read |
 |-------|-------|--------|-------------|------------|
@@ -144,30 +142,26 @@ CCBuddy uses the official Anthropic pricing (as of December 2024):
 | Claude Haiku 4.5 | $1/M | $5/M | $1.25/M | $0.10/M |
 | Claude Haiku 3.5 | $0.80/M | $4/M | $1/M | $0.08/M |
 
-*Note: Sonnet 4/4.5 has tiered pricing - higher rates apply after 200K tokens.*
+*Sonnet 4/4.5 is tiered: higher rates after 200K tokens. Opus 4.5 uses the newer $5/$25 pricing.*
 
-## Project Structure
+## Project structure
 
 ```
 CCBuddy/
-├── CCBuddyApp.swift              # App entry point & AppDelegate
-├── Models/
-│   ├── ClaudeMessage.swift       # JSONL message parsing
-│   ├── UsageStats.swift          # Usage statistics
-│   └── ModelPricing.swift        # Token pricing calculations
-├── Services/
-│   ├── JSONLParser.swift         # File parser
-│   ├── UsageCalculator.swift     # Statistics calculator
-│   └── FileWatcher.swift         # File change detection
-├── ViewModels/
-│   └── UsageViewModel.swift      # Main view model & settings
-├── Views/
-│   ├── PopoverView.swift         # Main popover UI
-│   └── SettingsView.swift        # Settings panel
-└── Utilities/
-    ├── Constants.swift           # App constants
-    └── Extensions.swift          # Swift extensions
+├── CCBuddyApp.swift              # App entry + AppDelegate
+├── Models/                       # ClaudeMessage, UsageStats, ModelPricing
+├── Services/                     # JSONLParser, UsageCalculator, FileWatcher
+├── ViewModels/                   # UsageViewModel
+├── Views/                        # PopoverView, SettingsView
+└── Utilities/                    # Constants, extensions
 ```
+
+## Roadmap
+- Usage alerts at thresholds (50/75/90%)
+- Launch at login
+- History export
+- Keyboard shortcuts
+- Sparkle auto-update
 
 ## Contributing
 
