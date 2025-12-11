@@ -199,6 +199,7 @@ class UsageViewModel: ObservableObject {
     private func startAutoRefresh() {
         refreshTimer?.invalidate()
         refreshTimer = nil
+        cancellables.removeAll()
 
         guard refreshInterval > 0 else {
             print("⏸️ [\(timeStamp())] Auto-refresh disabled (interval: 0)")
@@ -207,17 +208,14 @@ class UsageViewModel: ObservableObject {
 
         print("⏱️ [\(timeStamp())] Starting auto-refresh with interval: \(refreshInterval)s")
 
-        let timer = Timer(timeInterval: TimeInterval(refreshInterval), repeats: true) { [weak self] _ in
-            let timestamp = Self.formatTime(Date())
-            print("🔄 [\(timestamp)] Timer fired - triggering refresh")
-            Task { @MainActor in
+        Timer.publish(every: TimeInterval(refreshInterval), on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                let timestamp = Self.formatTime(Date())
+                print("🔄 [\(timestamp)] Timer fired - triggering refresh")
                 self?.refresh()
             }
-        }
-
-        // Add timer to main RunLoop with .common mode so it works during UI tracking
-        RunLoop.main.add(timer, forMode: .common)
-        refreshTimer = timer
+            .store(in: &cancellables)
     }
 
     // MARK: - File Checking
