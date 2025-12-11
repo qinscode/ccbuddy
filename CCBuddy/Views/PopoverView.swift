@@ -580,11 +580,6 @@ struct GlassActionButton: View {
     }
 }
 
-#Preview {
-    PopoverView(viewModel: UsageViewModel())
-        .preferredColorScheme(.dark)
-}
-
 // MARK: - Usage History Range
 
 private enum UsageHistoryRange: String, CaseIterable {
