@@ -102,13 +102,39 @@ jobs:
           DMG_NAME="${APP_NAME}-${VERSION}"
           DMG_DIR="dmg_build"
           FINAL_DMG="${DMG_NAME}.dmg"
+          TEMP_DMG="${DMG_NAME}-temp.dmg"
 
+          # Create temporary read-write DMG
           hdiutil create \
               -volname "${APP_NAME}" \
               -srcfolder "${DMG_DIR}" \
               -ov \
-              -format UDZO \
-              "${FINAL_DMG}"
+              -format UDRW \
+              "${TEMP_DMG}"
+
+          # Add volume icon to DMG
+          if [ -f "CCBuddy/Resources/AppIcon.icns" ]; then
+              MOUNT_DIR=$(mktemp -d)
+              DEVICE=$(hdiutil attach "${TEMP_DMG}" -mountpoint "${MOUNT_DIR}" -nobrowse | grep "/dev/disk" | head -1 | awk '{print $1}')
+              
+              # Copy icon to volume
+              cp "CCBuddy/Resources/AppIcon.icns" "${MOUNT_DIR}/.VolumeIcon.icns"
+              
+              # Set icon attributes
+              SetFile -c icnC "${MOUNT_DIR}/.VolumeIcon.icns"
+              SetFile -a C "${MOUNT_DIR}"
+              
+              # Sync and detach
+              sync
+              sleep 1
+              hdiutil detach "${DEVICE}" -force
+              sleep 1
+              rmdir "${MOUNT_DIR}"
+          fi
+
+          # Convert to compressed format
+          hdiutil convert "${TEMP_DMG}" -format UDZO -o "${FINAL_DMG}"
+          rm "${TEMP_DMG}"
 
           echo "DMG_PATH=${FINAL_DMG}" >> $GITHUB_ENV
           echo "DMG_NAME=${DMG_NAME}" >> $GITHUB_ENV
