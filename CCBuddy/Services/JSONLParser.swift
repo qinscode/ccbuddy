@@ -4,14 +4,14 @@ class JSONLParser {
     private let fileManager = FileManager.default
     private let decoder = JSONDecoder()
 
-    // Claude 数据目录
+    // Claude data directory
     var claudeDataPath: URL {
         fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude")
             .appendingPathComponent("projects")
     }
 
-    // MARK: - 解析所有会话
+    // MARK: - Parse all sessions
 
     func parseAllSessions() -> [ParsedSession] {
         var sessions: [ParsedSession] = []
@@ -43,7 +43,7 @@ class JSONLParser {
         return sessions
     }
 
-    // MARK: - 解析项目会话
+    // MARK: - Parse sessions in a project
 
     private func parseProjectSessions(at projectDir: URL) -> [ParsedSession] {
         var sessions: [ParsedSession] = []
@@ -69,7 +69,7 @@ class JSONLParser {
         return sessions
     }
 
-    // MARK: - 解析单个会话文件
+    // MARK: - Parse a single session file
 
     func parseSessionFile(at url: URL, projectPath: String) -> ParsedSession? {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
@@ -77,8 +77,8 @@ class JSONLParser {
         }
 
         let lines = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        // 使用 messageId:requestId 组合去重（与 ccusage 保持一致）
-        // 保留第一条记录（第一条包含准确的 usage 数据）
+        // Deduplicate by messageId:requestId (matches ccusage)
+        // Keep the first record (contains accurate usage)
         var processedHashes = Set<String>()
         var messages: [ParsedMessage] = []
         var sessionId = url.deletingPathExtension().lastPathComponent
@@ -94,12 +94,12 @@ class JSONLParser {
             do {
                 let claudeMessage = try decoder.decode(ClaudeMessage.self, from: data)
 
-                // 更新 sessionId
+                // Update sessionId when present
                 if let sid = claudeMessage.sessionId {
                     sessionId = sid
                 }
 
-                // 只处理 assistant 类型的消息（包含 usage 信息）
+                // Only handle assistant messages (carry usage info)
                 guard claudeMessage.type == "assistant",
                       let messageContent = claudeMessage.message,
                       let usage = messageContent.usage,
@@ -107,9 +107,9 @@ class JSONLParser {
                     continue
                 }
 
-                // 去重逻辑（与 ccusage 保持一致）
-                // 只有当 messageId 和 requestId 都存在时才进行去重
-                // 如果 requestId 缺失，则不去重（所有条目都计算）
+                // Dedup logic (same as ccusage)
+                // Dedup only when both messageId and requestId exist
+                // If requestId is missing, do not dedup
                 if let requestId = claudeMessage.requestId {
                     let uniqueHash = "\(messageId):\(requestId)"
                     if processedHashes.contains(uniqueHash) {
@@ -117,16 +117,16 @@ class JSONLParser {
                     }
                     processedHashes.insert(uniqueHash)
                 }
-                // 如果没有 requestId，不进行去重，直接添加
+                // If no requestId, add directly (no dedup)
 
-                // 解析时间戳
+                // Parse timestamp
                 var timestamp = Date()
                 if let ts = claudeMessage.timestamp {
-                    // 尝试多种格式
+                    // Try multiple formats
                     if let date = dateFormatter.date(from: ts) {
                         timestamp = date
                     } else {
-                        // 尝试不带毫秒的格式
+                        // Fallback: no fractional seconds
                         let fallbackFormatter = ISO8601DateFormatter()
                         if let date = fallbackFormatter.date(from: ts) {
                             timestamp = date
@@ -134,7 +134,7 @@ class JSONLParser {
                     }
                 }
 
-                // 更新时间范围
+                // Update time bounds
                 if startTime == nil || timestamp < startTime! {
                     startTime = timestamp
                 }
@@ -155,7 +155,7 @@ class JSONLParser {
                 messages.append(parsedMessage)
 
             } catch {
-                // 静默忽略解析错误，继续处理下一行
+                // Ignore parse errors and continue
                 continue
             }
         }
@@ -171,7 +171,7 @@ class JSONLParser {
         )
     }
 
-    // MARK: - 获取5小时窗口内的数据
+    // MARK: - Get data in rolling window
 
     func getMessagesInRollingWindow(hours: Double = 5) -> [ParsedMessage] {
         let cutoffTime = Date().addingTimeInterval(-hours * 60 * 60)
@@ -183,7 +183,7 @@ class JSONLParser {
             .sorted { $0.timestamp < $1.timestamp }
     }
 
-    // MARK: - 获取今日数据
+    // MARK: - Get today's data
 
     func getTodayMessages() -> [ParsedMessage] {
         let calendar = Calendar.current

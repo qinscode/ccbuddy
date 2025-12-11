@@ -157,7 +157,7 @@ struct PopoverView: View {
 
     private var modelDisplayList: [String] {
         let models = viewModel.currentStats.modelsUsed
-            .filter { !$0.contains("synthetic") }  // 过滤掉 synthetic 模型
+            .filter { !$0.contains("synthetic") }  // Filter out synthetic models
         if models.isEmpty { return [] }
         let uniqueNames = Set(models.map { ModelPricing.displayName(for: $0) })
         return uniqueNames.sorted()
@@ -501,7 +501,7 @@ struct StatRowNoIcon: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // 占位符保持对齐
+            // Placeholder to keep alignment
             Color.clear
                 .frame(width: fontSize.iconContainerSize, height: fontSize.iconContainerSize)
 

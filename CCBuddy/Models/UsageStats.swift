@@ -1,19 +1,19 @@
 import Foundation
 
 struct UsageStats {
-    // Token 统计
+    // Token counters
     var totalInputTokens: Int = 0
     var totalOutputTokens: Int = 0
     var totalCacheCreationTokens: Int = 0
     var totalCacheReadTokens: Int = 0
 
-    // 会话信息
+    // Session info
     var sessionStartTime: Date?
     var lastActivityTime: Date?
     var modelsUsed: Set<String> = []
     var sessionCount: Int = 0
 
-    // 计算属性
+    // Computed properties
     var totalTokens: Int {
         totalInputTokens + totalOutputTokens + totalCacheCreationTokens + totalCacheReadTokens
     }
@@ -22,10 +22,10 @@ struct UsageStats {
         formatTokenCount(totalTokens)
     }
 
-    // 费用
+    // Costs
     var estimatedCost: Double = 0
 
-    // 5小时窗口剩余时间
+    // Remaining time in the 5-hour window
     var timeRemaining: TimeInterval {
         guard let startTime = sessionStartTime else { return 5 * 60 * 60 }
         let elapsed = Date().timeIntervalSince(startTime)
@@ -42,11 +42,11 @@ struct UsageStats {
         }
     }
 
-    // 消耗速率 (tokens per minute)
+    // Burn rate (tokens per minute)
     var burnRate: Double {
         guard let startTime = sessionStartTime else { return 0 }
         let elapsed = Date().timeIntervalSince(startTime)
-        guard elapsed > 60 else { return 0 } // 至少1分钟才计算
+        guard elapsed > 60 else { return 0 } // Require at least 1 minute
         return Double(totalTokens) / (elapsed / 60)
     }
 
@@ -54,7 +54,7 @@ struct UsageStats {
         formatTokenCount(Int(burnRate)) + "/min"
     }
 
-    // 预计总费用 (按当前速率计算5小时)
+    // Projected total cost (extend current rate over 5 hours)
     var projectedCost: Double {
         guard let startTime = sessionStartTime else { return estimatedCost }
         let elapsed = Date().timeIntervalSince(startTime)
@@ -63,15 +63,15 @@ struct UsageStats {
         return costPerSecond * 5 * 60 * 60
     }
 
-    // 使用百分比 (基于典型限额估算)
-    // 注意：实际限额取决于订阅计划，这里使用估计值
+    // Usage percentage (approximate, depends on plan limits)
+    // Note: real limits depend on the subscription plan; this is an estimate
     var usagePercentage: Double {
-        // 假设5小时窗口限额约为 20M tokens (这个值需要根据实际情况调整)
+        // Assume ~20M tokens allowed per 5-hour window (adjust as needed)
         let estimatedLimit = 20_000_000.0
         return min(100, Double(totalTokens) / estimatedLimit * 100)
     }
 
-    // 格式化 token 数量
+    // Format token counts
     private func formatTokenCount(_ count: Int) -> String {
         if count >= 1_000_000 {
             return String(format: "%.1fM", Double(count) / 1_000_000)
@@ -83,7 +83,7 @@ struct UsageStats {
     }
 }
 
-// MARK: - 今日统计
+// MARK: - Daily stats
 
 struct DailyStats {
     var date: Date
@@ -99,17 +99,17 @@ struct DailyStats {
     }
 }
 
-// MARK: - 汇总统计
+// MARK: - Aggregated stats
 
 struct AggregatedStats {
     var fiveHourWindow: UsageStats
     var today: DailyStats
-    var thisWeek: Double // 本周费用
-    var thisMonth: Double // 本月费用
-    var allTime: Double // 总费用
+    var thisWeek: Double // Weekly cost
+    var thisMonth: Double // Monthly cost
+    var allTime: Double // All-time cost
 }
 
-// MARK: - 历史数据点（用于图表）
+// MARK: - History point (for charts)
 
 struct UsageHistoryPoint: Identifiable {
     let periodStart: Date

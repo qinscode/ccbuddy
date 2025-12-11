@@ -3,7 +3,7 @@ import Foundation
 class UsageCalculator {
     private let parser = JSONLParser()
 
-    // MARK: - 计算5小时窗口使用情况
+    // MARK: - 5-hour rolling window
 
     func calculateRollingWindowUsage(preloadedSessions: [ParsedSession]? = nil) -> UsageStats {
         let sessions = preloadedSessions ?? parser.parseAllSessions()
@@ -22,13 +22,13 @@ class UsageCalculator {
             stats.totalCacheReadTokens += message.cacheReadTokens
             stats.estimatedCost += message.cost
 
-            // 更新模型信息
+            // Track models used
             if let model = message.model {
                 stats.modelsUsed.insert(model)
             }
         }
 
-        // 设置时间信息
+        // Set time metadata
         if let firstMessage = messages.first {
             stats.sessionStartTime = firstMessage.timestamp
         }
@@ -41,7 +41,7 @@ class UsageCalculator {
         return stats
     }
 
-    // MARK: - 计算今日统计
+    // MARK: - Today stats
 
     func calculateTodayStats(preloadedSessions: [ParsedSession]? = nil) -> DailyStats {
         let sessions = preloadedSessions ?? parser.parseAllSessions()
@@ -84,15 +84,15 @@ class UsageCalculator {
         let fiveHourWindow = fiveHourWindow ?? calculateRollingWindowUsage(preloadedSessions: sessions)
         let today = todayStats ?? calculateTodayStats(preloadedSessions: sessions)
 
-        // 使用本地时区的日历
+        // Use local calendar with Monday as first weekday
         var calendar = Calendar.current
-        calendar.firstWeekday = 2  // 周一为周的第一天 (与 ccusage 保持一致)
+        calendar.firstWeekday = 2  // Monday as first day (aligns with ccusage)
         let now = Date()
 
-        // 本周开始 (周一 00:00:00)
+        // Start of week (Mon 00:00:00)
         let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
 
-        // 本月开始 (1号 00:00:00)
+        // Start of month (1st 00:00:00)
         let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
 
         var weekCost = 0.0
@@ -122,7 +122,7 @@ class UsageCalculator {
         )
     }
 
-    // MARK: - 按日期分组统计
+    // MARK: - Daily breakdown
 
     func calculateDailyBreakdown(days: Int = 7, preloadedSessions: [ParsedSession]? = nil) -> [DailyStats] {
         let calendar = Calendar.current
@@ -144,7 +144,7 @@ class UsageCalculator {
             }
         }
 
-        // 转换为数组并排序
+        // Convert to array and sort
         let cutoffDate = calendar.date(byAdding: .day, value: -days, to: Date())!
 
         return dailyStats
@@ -161,7 +161,7 @@ class UsageCalculator {
             .sorted { $0.date > $1.date }
     }
 
-    // MARK: - 历史数据（图表）
+    // MARK: - History for charts
 
     func calculateDailyHistory(days: Int = 7, preloadedSessions: [ParsedSession]? = nil) -> [UsageHistoryPoint] {
         let calendar = Calendar.current

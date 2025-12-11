@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-// 共享的 ViewModel
+// Shared ViewModel
 @MainActor
 class SharedState: ObservableObject {
     static let shared = SharedState()
@@ -30,22 +30,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     private var eventMonitor: Any?
     private let settingsDefaultSize = NSSize(width: 560, height: 480)
 
-    // 使用共享的 ViewModel
+    // Use the shared ViewModel
     private var viewModel: UsageViewModel {
         SharedState.shared.viewModel
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 设置应用为 accessory 模式 (不显示在 Dock)
+        // Set app to accessory mode (hide Dock icon)
         NSApp.setActivationPolicy(.accessory)
 
-        // 设置状态栏
+        // Set up status bar item
         setupStatusItem()
 
-        // 监听点击外部关闭
+        // Watch for clicks outside to close
         setupEventMonitor()
 
-        // 监听打开设置的通知
+        // Observe open-settings notification
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleOpenSettings),
@@ -73,7 +73,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             button.action = #selector(toggleDropdown)
             button.target = self
 
-            // 监听 ViewModel 变化更新按钮
+            // Update button when ViewModel changes
             viewModel.objectWillChange.sink { [weak self] _ in
                 DispatchQueue.main.async {
                     if let button = self?.statusItem?.button {
@@ -174,10 +174,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     // MARK: - Open Settings
 
     func openSettings() {
-        // 关闭下拉
+        // Close dropdown
         closeDropdown()
 
-        // 如果设置窗口已存在且有效，直接显示
+        // If settings window exists, just show it
         if let window = settingsWindow {
             ensureSettingsWindowVisible(window)
             window.makeKeyAndOrderFront(nil)
@@ -185,7 +185,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             return
         }
 
-        // 创建设置窗口
+        // Create settings window
         let settingsView = SettingsView(viewModel: viewModel)
         let hostingController = NSHostingController(rootView: settingsView)
 
@@ -196,19 +196,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         window.titleVisibility = .hidden
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.isReleasedWhenClosed = false  // 防止窗口关闭后被释放
+        window.isReleasedWhenClosed = false  // Keep window alive after close
         window.center()
         window.setFrameAutosaveName("SettingsWindow")
         window.setContentSize(settingsDefaultSize)
         centerSettingsWindow(window)
         ensureSettingsWindowVisible(window)
 
-        // 设置窗口代理来处理关闭事件
+        // Set delegate to track window closing
         window.delegate = self
 
         settingsWindow = window
 
-        // 显示窗口并激活应用
+        // Show window and activate app
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

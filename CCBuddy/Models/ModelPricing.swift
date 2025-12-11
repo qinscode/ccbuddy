@@ -6,11 +6,11 @@ struct ModelPricing {
     let cacheCreationPricePerMillion: Double
     let cacheReadPricePerMillion: Double
 
-    // 分层定价 (超过200k tokens时的价格)
+    // Tiered pricing (applies above 200k tokens)
     let tieredInputPricePerMillion: Double?
     let tieredOutputPricePerMillion: Double?
 
-    // 分层阈值 (200k tokens)
+    // Tiered threshold (200k tokens)
     static let tieredThreshold = 200_000
 
     init(
@@ -29,7 +29,7 @@ struct ModelPricing {
         self.tieredOutputPricePerMillion = tieredOutputPricePerMillion
     }
 
-    // 计算分层费用
+    // Calculate tiered cost
     private func calculateTieredCost(tokens: Int, basePrice: Double, tieredPrice: Double?) -> Double {
         guard let tieredPrice = tieredPrice, tokens > Self.tieredThreshold else {
             return Double(tokens) * basePrice / 1_000_000
@@ -44,7 +44,7 @@ struct ModelPricing {
         return baseCost + tieredCost
     }
 
-    // 计算费用 (支持分层定价)
+    // Calculate cost (supports tiered pricing)
     func calculateCost(
         inputTokens: Int,
         outputTokens: Int,
@@ -59,7 +59,7 @@ struct ModelPricing {
         return inputCost + outputCost + cacheCreationCost + cacheReadCost
     }
 
-    // MARK: - 预定义模型价格 (基于 LiteLLM 2025年)
+    // MARK: - Predefined model pricing (LiteLLM 2025)
 
     static let claudeOpus4 = ModelPricing(
         inputPricePerMillion: 15.0,
@@ -68,7 +68,7 @@ struct ModelPricing {
         cacheReadPricePerMillion: 1.50
     )
 
-    // Opus 4.5 使用新价格: $5/$25 per million
+    // Opus 4.5 uses new pricing: $5/$25 per million
     static let claudeOpus45 = ModelPricing(
         inputPricePerMillion: 5.0,
         outputPricePerMillion: 25.0,
@@ -76,7 +76,7 @@ struct ModelPricing {
         cacheReadPricePerMillion: 0.50
     )
 
-    // Sonnet 4 支持分层定价
+    // Sonnet 4 supports tiered pricing
     static let claudeSonnet4 = ModelPricing(
         inputPricePerMillion: 3.0,
         outputPricePerMillion: 15.0,
@@ -86,7 +86,7 @@ struct ModelPricing {
         tieredOutputPricePerMillion: 22.5
     )
 
-    // Sonnet 4.5 支持分层定价
+    // Sonnet 4.5 supports tiered pricing
     static let claudeSonnet45 = ModelPricing(
         inputPricePerMillion: 3.0,
         outputPricePerMillion: 15.0,
@@ -110,10 +110,10 @@ struct ModelPricing {
         cacheReadPricePerMillion: 0.10
     )
 
-    // 默认价格 (使用 Sonnet 价格)
+    // Default pricing (Sonnet)
     static let `default` = claudeSonnet4
 
-    // 根据模型名称获取价格
+    // Lookup pricing by model name
     static func forModel(_ modelName: String) -> ModelPricing {
         let lowercased = modelName.lowercased()
 
@@ -135,7 +135,7 @@ struct ModelPricing {
     }
 }
 
-// MARK: - 模型显示名称
+// MARK: - Model display names
 
 extension ModelPricing {
     static func displayName(for modelId: String) -> String {
@@ -165,7 +165,7 @@ extension ModelPricing {
             return "Unknown"
         }
 
-        // 获取唯一的显示名称（避免重复）
+        // Unique display names to avoid duplicates
         let uniqueNames = Set(models.map { displayName(for: $0) })
         return uniqueNames.sorted().joined(separator: ", ")
     }

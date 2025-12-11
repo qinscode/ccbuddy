@@ -182,7 +182,7 @@ class UsageViewModel: ObservableObject {
             }
         }
 
-        // 监听 Claude 数据目录
+        // Watch Claude data directories
         let claudePath = parser.claudeDataPath
         if FileManager.default.fileExists(atPath: claudePath.path) {
             // 获取所有项目目录
@@ -404,7 +404,7 @@ extension UsageViewModel {
         case .tokens:
             return currentStats.formattedTotalTokens
         case .cost:
-            // API 模式显示今天的成本，Pro/Max 模式显示当前窗口成本
+            // In API mode show today's cost; in Pro/Max show current window cost
             if usageMode == .api {
                 return formattedTodayCost
             } else {
