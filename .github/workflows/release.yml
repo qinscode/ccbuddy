@@ -136,6 +136,12 @@ jobs:
           hdiutil convert "${TEMP_DMG}" -format UDZO -o "${FINAL_DMG}"
           rm "${TEMP_DMG}"
 
+          # Set DMG file icon
+          if [ -f "CCBuddy/Resources/AppIcon.icns" ]; then
+              brew install fileicon
+              fileicon set "${FINAL_DMG}" "CCBuddy/Resources/AppIcon.icns"
+          fi
+
           echo "DMG_PATH=${FINAL_DMG}" >> $GITHUB_ENV
           echo "DMG_NAME=${DMG_NAME}" >> $GITHUB_ENV
 
