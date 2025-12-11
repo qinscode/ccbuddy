@@ -93,8 +93,6 @@ jobs:
               cp "CCBuddy/Resources/AppIcon.icns" "${DMG_DIR}/${APP_BUNDLE}/Contents/Resources/"
           fi
 
-          ln -s /Applications "${DMG_DIR}/Applications"
-
       - name: Create DMG
         run: |
           APP_NAME="CCBuddy"
@@ -102,45 +100,22 @@ jobs:
           DMG_NAME="${APP_NAME}-${VERSION}"
           DMG_DIR="dmg_build"
           FINAL_DMG="${DMG_NAME}.dmg"
-          TEMP_DMG="${DMG_NAME}-temp.dmg"
 
-          # Create temporary read-write DMG
-          hdiutil create \
-              -volname "${APP_NAME}" \
-              -srcfolder "${DMG_DIR}" \
-              -ov \
-              -format UDRW \
-              "${TEMP_DMG}"
+          # Install create-dmg
+          brew install create-dmg
 
-          # Add volume icon to DMG
-          if [ -f "CCBuddy/Resources/AppIcon.icns" ]; then
-              MOUNT_DIR=$(mktemp -d)
-              DEVICE=$(hdiutil attach "${TEMP_DMG}" -mountpoint "${MOUNT_DIR}" -nobrowse | grep "/dev/disk" | head -1 | awk '{print $1}')
-              
-              # Copy icon to volume
-              cp "CCBuddy/Resources/AppIcon.icns" "${MOUNT_DIR}/.VolumeIcon.icns"
-              
-              # Set icon attributes
-              SetFile -c icnC "${MOUNT_DIR}/.VolumeIcon.icns"
-              SetFile -a C "${MOUNT_DIR}"
-              
-              # Sync and detach
-              sync
-              sleep 1
-              hdiutil detach "${DEVICE}" -force
-              sleep 1
-              rmdir "${MOUNT_DIR}"
-          fi
-
-          # Convert to compressed format
-          hdiutil convert "${TEMP_DMG}" -format UDZO -o "${FINAL_DMG}"
-          rm "${TEMP_DMG}"
-
-          # Set DMG file icon
-          if [ -f "CCBuddy/Resources/AppIcon.icns" ]; then
-              brew install fileicon
-              fileicon set "${FINAL_DMG}" "CCBuddy/Resources/AppIcon.icns"
-          fi
+          # Create DMG with create-dmg (handles icons properly)
+          create-dmg \
+              --volname "${APP_NAME}" \
+              --volicon "CCBuddy/Resources/AppIcon.icns" \
+              --window-pos 200 120 \
+              --window-size 600 400 \
+              --icon-size 100 \
+              --icon "${APP_NAME}.app" 150 190 \
+              --hide-extension "${APP_NAME}.app" \
+              --app-drop-link 450 190 \
+              "${FINAL_DMG}" \
+              "${DMG_DIR}/${APP_NAME}.app"
 
           echo "DMG_PATH=${FINAL_DMG}" >> $GITHUB_ENV
           echo "DMG_NAME=${DMG_NAME}" >> $GITHUB_ENV
