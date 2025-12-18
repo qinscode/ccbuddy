@@ -39,6 +39,9 @@ class UsageViewModel: ObservableObject {
     @AppStorage("fontSize") var fontSize: FontSizeOption = .medium {
         didSet { objectWillChange.send() }
     }
+    @AppStorage("historyDisplayUnit") var historyDisplayUnit: HistoryDisplayUnit = .tokens {
+        didSet { objectWillChange.send() }
+    }
 
     // MARK: - Private Properties
 
@@ -336,6 +339,20 @@ enum UsageMode: String, CaseIterable {
         switch self {
         case .proMax: return "5-hour rolling window with weekly limits"
         case .api: return "Pay per token, no time limits"
+        }
+    }
+}
+
+// MARK: - History Display Unit
+
+enum HistoryDisplayUnit: String, CaseIterable {
+    case tokens = "tokens"
+    case cost = "cost"
+
+    var displayName: String {
+        switch self {
+        case .tokens: return "Tokens"
+        case .cost: return "Cost ($)"
         }
     }
 }

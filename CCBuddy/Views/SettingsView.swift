@@ -1,9 +1,10 @@
 import SwiftUI
 import AppKit
+import ServiceManagement
 
 struct SettingsView: View {
     @ObservedObject var viewModel: UsageViewModel
-    @AppStorage("launchAtLogin") private var launchAtLogin = false
+    @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage("showNotifications") private var showNotifications = true
     @AppStorage("notificationThreshold") private var notificationThreshold = 75
     
@@ -41,25 +42,28 @@ struct SettingsView: View {
                     .padding(.bottom, 12)
                 
                 // Content Area
-                ZStack(alignment: .top) {
-                    switch selectedTab {
-                    case .general:
-                        generalSettings
-                            .transition(.opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.98))))
-                    case .appearance:
-                        appearanceSettings
-                            .transition(.opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.98))))
-                    case .notifications:
-                        notificationSettings
-                            .transition(.opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.98))))
-                    case .about:
-                        aboutView
-                            .transition(.opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.98))))
+                ScrollView {
+                    ZStack(alignment: .top) {
+                        switch selectedTab {
+                        case .general:
+                            generalSettings
+                                .transition(.opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.98))))
+                        case .appearance:
+                            appearanceSettings
+                                .transition(.opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.98))))
+                        case .notifications:
+                            notificationSettings
+                                .transition(.opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.98))))
+                        case .about:
+                            aboutView
+                                .transition(.opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.98))))
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                    .frame(maxWidth: .infinity, alignment: .top)
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
         .frame(width: 560, height: 480)
@@ -126,6 +130,18 @@ struct SettingsView: View {
             GlassCard(title: "Behavior") {
                 VStack(spacing: 12) {
                     GlassToggle(title: "Launch at Login", icon: "rocket.fill", isOn: $launchAtLogin)
+                        .onChange(of: launchAtLogin) { _, newValue in
+                            do {
+                                if newValue {
+                                    try SMAppService.mainApp.register()
+                                } else {
+                                    try SMAppService.mainApp.unregister()
+                                }
+                            } catch {
+                                // Revert toggle state if operation failed
+                                launchAtLogin = !newValue
+                            }
+                        }
                     
                     Divider().background(Color.primary.opacity(0.08))
                     
@@ -163,11 +179,33 @@ struct SettingsView: View {
                             Image(systemName: "menubar.rectangle")
                                 .foregroundStyle(.secondary)
                         }
-                        
+
                         Spacer()
-                        
+
                         Picker("", selection: $viewModel.showInMenuBar) {
                             ForEach(MenuBarDisplay.allCases, id: \.self) { option in
+                                Text(option.displayName).tag(option)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+
+                    Divider().background(Color.primary.opacity(0.08))
+
+                    HStack {
+                        Label {
+                            Text("History Chart Unit")
+                                .foregroundStyle(.primary)
+                        } icon: {
+                            Image(systemName: "chart.bar.fill")
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Picker("", selection: $viewModel.historyDisplayUnit) {
+                            ForEach(HistoryDisplayUnit.allCases, id: \.self) { option in
                                 Text(option.displayName).tag(option)
                             }
                         }

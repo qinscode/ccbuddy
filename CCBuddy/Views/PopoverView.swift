@@ -277,7 +277,7 @@ struct PopoverView: View {
                 Chart(historyData) { point in
                     BarMark(
                         x: .value("Period", point.periodStart, unit: xAxisUnit),
-                        y: .value("Tokens", point.totalTokens)
+                        y: .value(chartYLabel, chartYValue(for: point))
                     )
                     .cornerRadius(4)
                     .foregroundStyle(
@@ -291,7 +291,7 @@ struct PopoverView: View {
                         )
                     )
                     .annotation(position: .top) {
-                        Text(point.formattedTokens)
+                        Text(chartAnnotation(for: point))
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
@@ -321,9 +321,17 @@ struct PopoverView: View {
 
             if !historyData.isEmpty {
                 HStack {
-                    Text("\(historyTotalTokens.formattedCompact) tokens")
+                    if viewModel.historyDisplayUnit == .tokens {
+                        Text("\(historyTotalTokens.formattedCompact) tokens")
+                    } else {
+                        Text(String(format: "$%.1f", historyTotalCost))
+                    }
                     Spacer()
-                    Text(historyTotalCost.formattedAsCurrency)
+                    if viewModel.historyDisplayUnit == .tokens {
+                        Text(String(format: "$%.1f", historyTotalCost))
+                    } else {
+                        Text("\(historyTotalTokens.formattedCompact) tokens")
+                    }
                 }
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
@@ -378,6 +386,22 @@ struct PopoverView: View {
 
     private var historyTotalCost: Double {
         historyData.reduce(0) { $0 + $1.totalCost }
+    }
+
+    private var chartYLabel: String {
+        viewModel.historyDisplayUnit == .tokens ? "Tokens" : "Cost"
+    }
+
+    private func chartYValue(for point: UsageHistoryPoint) -> Double {
+        viewModel.historyDisplayUnit == .tokens ? Double(point.totalTokens) : point.totalCost
+    }
+
+    private func chartAnnotation(for point: UsageHistoryPoint) -> String {
+        if viewModel.historyDisplayUnit == .tokens {
+            return point.formattedTokens
+        } else {
+            return String(format: "$%.1f", point.totalCost)
+        }
     }
 
     private func axisLabel(for date: Date) -> String {
