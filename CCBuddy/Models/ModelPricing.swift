@@ -9,6 +9,8 @@ struct ModelPricing {
     // Tiered pricing (applies above 200k tokens)
     let tieredInputPricePerMillion: Double?
     let tieredOutputPricePerMillion: Double?
+    let tieredCacheCreationPricePerMillion: Double?
+    let tieredCacheReadPricePerMillion: Double?
 
     // Tiered threshold (200k tokens)
     static let tieredThreshold = 200_000
@@ -19,7 +21,9 @@ struct ModelPricing {
         cacheCreationPricePerMillion: Double,
         cacheReadPricePerMillion: Double,
         tieredInputPricePerMillion: Double? = nil,
-        tieredOutputPricePerMillion: Double? = nil
+        tieredOutputPricePerMillion: Double? = nil,
+        tieredCacheCreationPricePerMillion: Double? = nil,
+        tieredCacheReadPricePerMillion: Double? = nil
     ) {
         self.inputPricePerMillion = inputPricePerMillion
         self.outputPricePerMillion = outputPricePerMillion
@@ -27,6 +31,8 @@ struct ModelPricing {
         self.cacheReadPricePerMillion = cacheReadPricePerMillion
         self.tieredInputPricePerMillion = tieredInputPricePerMillion
         self.tieredOutputPricePerMillion = tieredOutputPricePerMillion
+        self.tieredCacheCreationPricePerMillion = tieredCacheCreationPricePerMillion
+        self.tieredCacheReadPricePerMillion = tieredCacheReadPricePerMillion
     }
 
     // Calculate tiered cost
@@ -44,7 +50,7 @@ struct ModelPricing {
         return baseCost + tieredCost
     }
 
-    // Calculate cost (supports tiered pricing)
+    // Calculate cost (supports tiered pricing for all token types)
     func calculateCost(
         inputTokens: Int,
         outputTokens: Int,
@@ -53,13 +59,13 @@ struct ModelPricing {
     ) -> Double {
         let inputCost = calculateTieredCost(tokens: inputTokens, basePrice: inputPricePerMillion, tieredPrice: tieredInputPricePerMillion)
         let outputCost = calculateTieredCost(tokens: outputTokens, basePrice: outputPricePerMillion, tieredPrice: tieredOutputPricePerMillion)
-        let cacheCreationCost = Double(cacheCreationTokens) * cacheCreationPricePerMillion / 1_000_000
-        let cacheReadCost = Double(cacheReadTokens) * cacheReadPricePerMillion / 1_000_000
+        let cacheCreationCost = calculateTieredCost(tokens: cacheCreationTokens, basePrice: cacheCreationPricePerMillion, tieredPrice: tieredCacheCreationPricePerMillion)
+        let cacheReadCost = calculateTieredCost(tokens: cacheReadTokens, basePrice: cacheReadPricePerMillion, tieredPrice: tieredCacheReadPricePerMillion)
 
         return inputCost + outputCost + cacheCreationCost + cacheReadCost
     }
 
-    // MARK: - Predefined model pricing (LiteLLM 2025)
+    // MARK: - Predefined model pricing (LiteLLM 2025 - fallback when offline)
 
     static let claudeOpus4 = ModelPricing(
         inputPricePerMillion: 15.0,
@@ -76,24 +82,28 @@ struct ModelPricing {
         cacheReadPricePerMillion: 0.50
     )
 
-    // Sonnet 4 supports tiered pricing
+    // Sonnet 4 supports tiered pricing (including cache tokens)
     static let claudeSonnet4 = ModelPricing(
         inputPricePerMillion: 3.0,
         outputPricePerMillion: 15.0,
         cacheCreationPricePerMillion: 3.75,
         cacheReadPricePerMillion: 0.30,
         tieredInputPricePerMillion: 6.0,
-        tieredOutputPricePerMillion: 22.5
+        tieredOutputPricePerMillion: 22.5,
+        tieredCacheCreationPricePerMillion: 7.5,
+        tieredCacheReadPricePerMillion: 0.6
     )
 
-    // Sonnet 4.5 supports tiered pricing
+    // Sonnet 4.5 supports tiered pricing (including cache tokens)
     static let claudeSonnet45 = ModelPricing(
         inputPricePerMillion: 3.0,
         outputPricePerMillion: 15.0,
         cacheCreationPricePerMillion: 3.75,
         cacheReadPricePerMillion: 0.30,
         tieredInputPricePerMillion: 6.0,
-        tieredOutputPricePerMillion: 22.5
+        tieredOutputPricePerMillion: 22.5,
+        tieredCacheCreationPricePerMillion: 7.5,
+        tieredCacheReadPricePerMillion: 0.6
     )
 
     static let claudeHaiku35 = ModelPricing(
@@ -113,7 +123,26 @@ struct ModelPricing {
     // Default pricing (Sonnet)
     static let `default` = claudeSonnet4
 
-    // Lookup pricing by model name
+    // MARK: - Dynamic pricing from LiteLLM
+
+    /// Cache for dynamically fetched pricing
+    private static var dynamicPricingCache: [String: ModelPricing?] = [:]
+
+    /// Get pricing for a model (async, fetches from LiteLLM)
+    /// Returns nil if model not found in LiteLLM (to match ccusage behavior)
+    static func forModelAsync(_ modelName: String) async -> ModelPricing? {
+        // Check cache first
+        if let cached = dynamicPricingCache[modelName] {
+            return cached
+        }
+
+        // Try to fetch from LiteLLM
+        let liteLLMPricing = await LiteLLMPricingFetcher.shared.getModelPricing(modelName)
+        dynamicPricingCache[modelName] = liteLLMPricing
+        return liteLLMPricing
+    }
+
+    /// Lookup pricing by model name (synchronous fallback - uses static pricing)
     static func forModel(_ modelName: String) -> ModelPricing {
         let lowercased = modelName.lowercased()
 
@@ -132,6 +161,12 @@ struct ModelPricing {
         }
 
         return .default
+    }
+
+    /// Clear the dynamic pricing cache
+    static func clearCache() {
+        dynamicPricingCache.removeAll()
+        LiteLLMPricingFetcher.shared.clearCache()
     }
 }
 
