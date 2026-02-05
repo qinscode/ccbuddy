@@ -443,7 +443,7 @@ struct SettingsView: View {
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                 
-                Text("Version 1.0.0")
+                Text("Version 1.0.2")
                     .font(.caption)
                     .foregroundColor(.white.opacity(0.85))
                     .padding(.horizontal, 10)

@@ -36,7 +36,7 @@ Native macOS menu bar app to monitor Claude Code token usage and cost in real ti
 │  🔥 Burn Rate            186.2K/min    │
 │  💻 Model           Claude Opus 4.5    │
 ├────────────────────────────────────────┤
-│  ↻ Refresh   ⚙ Settings   ⏻ Quit      │
+│  ↻ Refresh   ⚙ Settings   ⏻ Quit       │
 └────────────────────────────────────────┘
 ```
 
