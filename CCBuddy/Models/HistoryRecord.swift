@@ -38,16 +38,17 @@ final class DailyUsageRecord {
         self.lastUpdated = Date()
     }
 
-    /// 更新记录（直接替换为最新计算值）
+    /// 更新记录（取较大值，防止 JSONL 文件删除或定价失败导致数据丢失）
     func update(inputTokens: Int, outputTokens: Int, cacheCreationTokens: Int,
                 cacheReadTokens: Int, cost: Double, sessionCount: Int, models: [String]) {
-        self.totalInputTokens = inputTokens
-        self.totalOutputTokens = outputTokens
-        self.totalCacheCreationTokens = cacheCreationTokens
-        self.totalCacheReadTokens = cacheReadTokens
-        self.totalCost = cost
-        self.sessionCount = sessionCount
-        self.models = models
+        self.totalInputTokens = max(self.totalInputTokens, inputTokens)
+        self.totalOutputTokens = max(self.totalOutputTokens, outputTokens)
+        self.totalCacheCreationTokens = max(self.totalCacheCreationTokens, cacheCreationTokens)
+        self.totalCacheReadTokens = max(self.totalCacheReadTokens, cacheReadTokens)
+        self.totalCost = max(self.totalCost, cost)
+        self.sessionCount = max(self.sessionCount, sessionCount)
+        let allModels = Set(self.models).union(Set(models))
+        self.models = Array(allModels)
         self.lastUpdated = Date()
     }
 }

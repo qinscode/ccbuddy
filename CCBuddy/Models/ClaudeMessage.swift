@@ -120,13 +120,10 @@ struct ParsedMessage {
     }
 
     /// Async cost calculation (fetches from LiteLLM for accurate pricing)
-    /// Returns 0 if model not found in LiteLLM (matches ccusage behavior)
+    /// Falls back to static pricing if model not found in LiteLLM
     func costAsync() async -> Double {
         guard let model = model else { return 0 }
-        guard let pricing = await ModelPricing.forModelAsync(model) else {
-            // Model not found in LiteLLM - return 0 to match ccusage behavior
-            return 0
-        }
+        let pricing = await ModelPricing.forModelAsync(model) ?? ModelPricing.forModel(model)
 
         return pricing.calculateCost(
             inputTokens: inputTokens,
