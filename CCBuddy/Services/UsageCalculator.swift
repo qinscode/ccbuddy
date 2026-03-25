@@ -403,7 +403,7 @@ class UsageCalculator {
     // MARK: - 按日期分组会话数据（供 HistoryStore 使用）
     // Uses local timezone for date formatting (matches ccusage behavior)
 
-    func groupSessionsByDate(_ sessions: [ParsedSession]) -> [String: (input: Int, output: Int, cacheCreate: Int, cacheRead: Int, cost: Double, count: Int, models: Set<String>)] {
+    func groupSessionsByDate(_ sessions: [ParsedSession]) async -> [String: (input: Int, output: Int, cacheCreate: Int, cacheRead: Int, cost: Double, count: Int, models: Set<String>)] {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone.current  // Local timezone (matches ccusage)
@@ -413,13 +413,14 @@ class UsageCalculator {
         for session in sessions {
             for message in session.messages {
                 let dateKey = formatter.string(from: message.timestamp)
+                let messageCost = await message.costAsync()
 
                 var data = dailyData[dateKey] ?? (0, 0, 0, 0, 0, 0, Set<String>())
                 data.input += message.inputTokens
                 data.output += message.outputTokens
                 data.cacheCreate += message.cacheCreationTokens
                 data.cacheRead += message.cacheReadTokens
-                data.cost += message.cost
+                data.cost += messageCost
                 data.count += 1
                 if let model = message.model {
                     data.models.insert(model)

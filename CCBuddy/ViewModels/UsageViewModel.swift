@@ -137,9 +137,9 @@ class UsageViewModel: ObservableObject {
                 calculator.calculateDailyBreakdown(days: 7, preloadedSessions: sessions)
             }.value
 
-            // 在后台线程计算分组数据
+            // 在后台线程计算分组数据（使用 async 定价）
             let groupedData = await Task.detached { [calculator] in
-                calculator.groupSessionsByDate(sessions)
+                await calculator.groupSessionsByDate(sessions)
             }.value
 
             let stats = await statsTask

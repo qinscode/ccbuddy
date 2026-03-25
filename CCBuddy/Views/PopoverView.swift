@@ -141,14 +141,8 @@ struct PopoverView: View {
                 StatRow(icon: "arrow.up.right.circle.fill", color: .orange, title: "Projected Cost", value: viewModel.formattedProjectedCost, fontSize: viewModel.fontSize)
                 StatRow(icon: "flame.fill", color: .red, title: "Burn Rate", value: viewModel.currentStats.formattedBurnRate, fontSize: viewModel.fontSize)
 
-                VStack(spacing: 4) {
-                    ForEach(Array(modelDisplayList.enumerated()), id: \.element) { index, modelName in
-                        if index == 0 {
-                            StatRow(icon: "cpu.fill", color: .purple, title: "Model", value: modelName, fontSize: viewModel.fontSize)
-                        } else {
-                            StatRowNoIcon(value: modelName, fontSize: viewModel.fontSize)
-                        }
-                    }
+                if !modelDisplayList.isEmpty {
+                    StatRow(icon: "cpu.fill", color: .purple, title: "Model", value: modelDisplayList.joined(separator: ", "), fontSize: viewModel.fontSize)
                 }
             }
             .padding(.horizontal, 16)
@@ -166,14 +160,8 @@ struct PopoverView: View {
             StatRow(icon: "calendar.badge.clock", color: .pink, title: "This Month", value: viewModel.formattedMonthCost, fontSize: viewModel.fontSize)
             StatRow(icon: "dollarsign.circle.fill", color: .green, title: "All Time", value: viewModel.formattedAllTimeCost, fontSize: viewModel.fontSize)
 
-            VStack(spacing: 4) {
-                ForEach(Array(modelDisplayList.enumerated()), id: \.element) { index, modelName in
-                    if index == 0 {
-                        StatRow(icon: "cpu.fill", color: .purple, title: "Model", value: modelName, fontSize: viewModel.fontSize)
-                    } else {
-                        StatRowNoIcon(value: modelName, fontSize: viewModel.fontSize)
-                    }
-                }
+            if !modelDisplayList.isEmpty {
+                StatRow(icon: "cpu.fill", color: .purple, title: "Model", value: modelDisplayList.joined(separator: ", "), fontSize: viewModel.fontSize)
             }
         }
         .padding(.horizontal, 16)
