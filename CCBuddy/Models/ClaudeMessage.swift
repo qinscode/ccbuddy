@@ -106,9 +106,27 @@ struct ParsedMessage {
         inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens
     }
 
+    /// Synchronous cost calculation (uses fallback static pricing)
     var cost: Double {
         guard let model = model else { return 0 }
         let pricing = ModelPricing.forModel(model)
+
+        return pricing.calculateCost(
+            inputTokens: inputTokens,
+            outputTokens: outputTokens,
+            cacheCreationTokens: cacheCreationTokens,
+            cacheReadTokens: cacheReadTokens
+        )
+    }
+
+    /// Async cost calculation (fetches from LiteLLM for accurate pricing)
+    /// Returns 0 if model not found in LiteLLM (matches ccusage behavior)
+    func costAsync() async -> Double {
+        guard let model = model else { return 0 }
+        guard let pricing = await ModelPricing.forModelAsync(model) else {
+            // Model not found in LiteLLM - return 0 to match ccusage behavior
+            return 0
+        }
 
         return pricing.calculateCost(
             inputTokens: inputTokens,

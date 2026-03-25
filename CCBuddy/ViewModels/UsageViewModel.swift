@@ -12,6 +12,7 @@ class UsageViewModel: ObservableObject {
     @Published var dailyHistory: [UsageHistoryPoint] = []
     @Published var weeklyHistory: [UsageHistoryPoint] = []
     @Published var monthlyHistory: [UsageHistoryPoint] = []
+    @Published var persistedAllTimeCost: Double = 0  // 持久化的总计成本
     @Published var isLoading = false
     @Published var lastUpdated: Date?
     @Published var error: String?
@@ -125,23 +126,20 @@ class UsageViewModel: ObservableObject {
             }
 
             async let statsTask: UsageStats = Task.detached { [calculator] in
-                calculator.calculateRollingWindowUsage(preloadedSessions: sessions)
+                await calculator.calculateRollingWindowUsageAsync(preloadedSessions: sessions)
             }.value
 
             async let todayTask: DailyStats = Task.detached { [calculator] in
-                calculator.calculateTodayStats(preloadedSessions: sessions)
+                await calculator.calculateTodayStatsAsync(preloadedSessions: sessions)
             }.value
 
             async let dailyBreakdownTask: [DailyStats] = Task.detached { [calculator] in
                 calculator.calculateDailyBreakdown(days: 7, preloadedSessions: sessions)
             }.value
 
-            async let historyTask = Task.detached { [calculator] in
-                (
-                    daily: calculator.calculateDailyHistory(days: 7, preloadedSessions: sessions),
-                    weekly: calculator.calculateWeeklyHistory(weeks: 8, preloadedSessions: sessions),
-                    monthly: calculator.calculateMonthlyHistory(months: 6, preloadedSessions: sessions)
-                )
+            // 在后台线程计算分组数据（使用 async 定价）
+            let groupedData = await Task.detached { [calculator] in
+                await calculator.groupSessionsByDate(sessions)
             }.value
 
             let stats = await statsTask
@@ -149,17 +147,34 @@ class UsageViewModel: ObservableObject {
             self.currentStats = stats
 
             self.aggregatedStats = await Task.detached { [calculator] in
-                calculator.calculateAggregatedStats(
+                await calculator.calculateAggregatedStatsAsync(
                     preloadedSessions: sessions,
                     fiveHourWindow: stats,
                     todayStats: today
                 )
             }.value
             self.dailyBreakdown = await dailyBreakdownTask
-            let history = await historyTask
-            self.dailyHistory = history.daily
-            self.weeklyHistory = history.weekly
-            self.monthlyHistory = history.monthly
+
+            // 更新 SwiftData 历史存储并获取历史数据（在主线程）
+            let historyStore = HistoryStore.shared
+            for (dateKey, data) in groupedData {
+                historyStore.upsert(
+                    date: dateKey,
+                    inputTokens: data.input,
+                    outputTokens: data.output,
+                    cacheCreationTokens: data.cacheCreate,
+                    cacheReadTokens: data.cacheRead,
+                    cost: data.cost,
+                    sessionCount: data.count,
+                    models: Array(data.models)
+                )
+            }
+
+            self.dailyHistory = historyStore.getHistoryPoints(days: 14)
+            self.weeklyHistory = historyStore.getWeeklyHistoryPoints(weeks: 8)
+            self.monthlyHistory = historyStore.getMonthlyHistoryPoints(months: 12)
+            self.persistedAllTimeCost = historyStore.getTotalStats().cost
+
             self.lastUpdated = Date()
             self.isLoading = false
             self.refreshTask = nil
@@ -409,6 +424,11 @@ enum FontSizeOption: String, CaseIterable {
 
 extension UsageViewModel {
     var menuBarText: String {
+        // Show loading indicator if data hasn't been loaded yet
+        if lastUpdated == nil && isLoading {
+            return "..."
+        }
+
         switch showInMenuBar {
         case .percentage:
             if usageMode == .proMax {
@@ -463,7 +483,8 @@ extension UsageViewModel {
     }
 
     var formattedAllTimeCost: String {
-        guard let stats = aggregatedStats else { return "$0.00" }
-        return String(format: "$%.2f", stats.allTime)
+        // 使用持久化的总计成本（包含已被删除的历史数据）
+        let cost = max(persistedAllTimeCost, aggregatedStats?.allTime ?? 0)
+        return String(format: "$%.2f", cost)
     }
 }

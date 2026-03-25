@@ -3,6 +3,17 @@ import Foundation
 class UsageCalculator {
     private let parser = JSONLParser()
 
+    // MARK: - Async cost calculation helper
+
+    /// Calculate total cost for messages using async LiteLLM pricing
+    private func calculateTotalCostAsync(for messages: [ParsedMessage]) async -> Double {
+        var totalCost = 0.0
+        for message in messages {
+            totalCost += await message.costAsync()
+        }
+        return totalCost
+    }
+
     // MARK: - 5-hour rolling window
 
     func calculateRollingWindowUsage(preloadedSessions: [ParsedSession]? = nil) -> UsageStats {
@@ -41,15 +52,61 @@ class UsageCalculator {
         return stats
     }
 
-    // MARK: - Today stats
+    /// Async version with LiteLLM pricing
+    func calculateRollingWindowUsageAsync(preloadedSessions: [ParsedSession]? = nil) async -> UsageStats {
+        let sessions = preloadedSessions ?? parser.parseAllSessions()
+        let cutoffTime = Date().addingTimeInterval(-5 * 60 * 60)
+        let messages = sessions
+            .flatMap { $0.messages }
+            .filter { $0.timestamp >= cutoffTime }
+            .sorted { $0.timestamp < $1.timestamp }
+
+        var stats = UsageStats()
+
+        for message in messages {
+            stats.totalInputTokens += message.inputTokens
+            stats.totalOutputTokens += message.outputTokens
+            stats.totalCacheCreationTokens += message.cacheCreationTokens
+            stats.totalCacheReadTokens += message.cacheReadTokens
+
+            // Track models used
+            if let model = message.model {
+                stats.modelsUsed.insert(model)
+            }
+        }
+
+        // Calculate cost asynchronously
+        stats.estimatedCost = await calculateTotalCostAsync(for: messages)
+
+        // Set time metadata
+        if let firstMessage = messages.first {
+            stats.sessionStartTime = firstMessage.timestamp
+        }
+        if let lastMessage = messages.last {
+            stats.lastActivityTime = lastMessage.timestamp
+        }
+
+        stats.sessionCount = Set(messages.map { $0.uuid }).count
+
+        return stats
+    }
+
+    // MARK: - Today stats (matches ccusage: group by formatted date string in local timezone)
 
     func calculateTodayStats(preloadedSessions: [ParsedSession]? = nil) -> DailyStats {
         let sessions = preloadedSessions ?? parser.parseAllSessions()
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: Date())
+
+        // ccusage uses Intl.DateTimeFormat with local timezone to format dates
+        // Then groups by the formatted date string (YYYY-MM-DD)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        dateFormatter.timeZone = TimeZone.current  // Local timezone (matches ccusage)
+
+        let todayString = dateFormatter.string(from: Date())
+
         let messages = sessions
             .flatMap { $0.messages }
-            .filter { $0.timestamp >= startOfDay }
+            .filter { dateFormatter.string(from: $0.timestamp) == todayString }
             .sorted { $0.timestamp < $1.timestamp }
 
         var totalTokens = 0
@@ -63,6 +120,43 @@ class UsageCalculator {
                 models.insert(model)
             }
         }
+
+        return DailyStats(
+            date: Date(),
+            totalTokens: totalTokens,
+            totalCost: totalCost,
+            sessionCount: messages.count,
+            models: models
+        )
+    }
+
+    /// Async version with LiteLLM pricing
+    func calculateTodayStatsAsync(preloadedSessions: [ParsedSession]? = nil) async -> DailyStats {
+        let sessions = preloadedSessions ?? parser.parseAllSessions()
+
+        // ccusage uses Intl.DateTimeFormat with local timezone to format dates
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        dateFormatter.timeZone = TimeZone.current  // Local timezone (matches ccusage)
+
+        let todayString = dateFormatter.string(from: Date())
+
+        let messages = sessions
+            .flatMap { $0.messages }
+            .filter { dateFormatter.string(from: $0.timestamp) == todayString }
+            .sorted { $0.timestamp < $1.timestamp }
+
+        var totalTokens = 0
+        var models = Set<String>()
+
+        for message in messages {
+            totalTokens += message.totalTokens
+            if let model = message.model {
+                models.insert(model)
+            }
+        }
+
+        let totalCost = await calculateTotalCostAsync(for: messages)
 
         return DailyStats(
             date: Date(),
@@ -116,6 +210,77 @@ class UsageCalculator {
         return AggregatedStats(
             fiveHourWindow: fiveHourWindow,
             today: today,
+            thisWeek: weekCost,
+            thisMonth: monthCost,
+            allTime: allTimeCost
+        )
+    }
+
+    /// Async version with LiteLLM pricing
+    func calculateAggregatedStatsAsync(
+        preloadedSessions: [ParsedSession]? = nil,
+        fiveHourWindow: UsageStats? = nil,
+        todayStats: DailyStats? = nil
+    ) async -> AggregatedStats {
+        let sessions = preloadedSessions ?? parser.parseAllSessions()
+
+        // Handle optional async values properly
+        let resolvedFiveHourWindow: UsageStats
+        if let provided = fiveHourWindow {
+            resolvedFiveHourWindow = provided
+        } else {
+            resolvedFiveHourWindow = await calculateRollingWindowUsageAsync(preloadedSessions: sessions)
+        }
+
+        let resolvedToday: DailyStats
+        if let provided = todayStats {
+            resolvedToday = provided
+        } else {
+            resolvedToday = await calculateTodayStatsAsync(preloadedSessions: sessions)
+        }
+
+        // Use local calendar with Monday as first weekday
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2  // Monday as first day (aligns with ccusage)
+        let now = Date()
+
+        // Start of week (Mon 00:00:00)
+        let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now))!
+
+        // Start of month (1st 00:00:00)
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: now))!
+
+        var weekCost = 0.0
+        var monthCost = 0.0
+        var allTimeCost = 0.0
+
+        // Collect all messages for async cost calculation
+        var allMessages: [ParsedMessage] = []
+        var weekMessages: [ParsedMessage] = []
+        var monthMessages: [ParsedMessage] = []
+
+        for session in sessions {
+            for message in session.messages {
+                allMessages.append(message)
+
+                if message.timestamp >= monthStart {
+                    monthMessages.append(message)
+                }
+
+                if message.timestamp >= weekStart {
+                    weekMessages.append(message)
+                }
+            }
+        }
+
+        // Calculate costs asynchronously
+        allTimeCost = await calculateTotalCostAsync(for: allMessages)
+        monthCost = await calculateTotalCostAsync(for: monthMessages)
+        weekCost = await calculateTotalCostAsync(for: weekMessages)
+
+        return AggregatedStats(
+            fiveHourWindow: resolvedFiveHourWindow,
+            today: resolvedToday,
             thisWeek: weekCost,
             thisMonth: monthCost,
             allTime: allTimeCost
@@ -188,6 +353,7 @@ class UsageCalculator {
         let allSessions = preloadedSessions ?? parser.parseAllSessions()
         var buckets: [Date: (tokens: Int, cost: Double)] = [:]
 
+        // 1. Populate buckets from actual usage
         for session in allSessions {
             for message in session.messages {
                 let key = bucketKey(for: message.timestamp, grouping: grouping, calendar: calendar)
@@ -200,11 +366,27 @@ class UsageCalculator {
             }
         }
 
-        return buckets
-            .map { date, data in
-                UsageHistoryPoint(periodStart: date, totalTokens: data.tokens, totalCost: data.cost)
+        // 2. Generate complete timeline filling gaps with zero
+        var points: [UsageHistoryPoint] = []
+        var currentDate = startDate
+        let now = Date()
+        let endBucket = bucketKey(for: now, grouping: grouping, calendar: calendar)
+
+        while currentDate <= endBucket {
+            let data = buckets[currentDate] ?? (0, 0)
+            points.append(UsageHistoryPoint(periodStart: currentDate, totalTokens: data.tokens, totalCost: data.cost))
+
+            // Advance to next period
+            // Use .weekOfYear for weeks to ensure correct stride
+            let component = grouping == .weekOfYear ? .weekOfYear : grouping
+            if let nextDate = calendar.date(byAdding: component, value: 1, to: currentDate) {
+                currentDate = nextDate
+            } else {
+                break
             }
-            .sorted { $0.periodStart < $1.periodStart }
+        }
+
+        return points
     }
 
     private func bucketKey(for date: Date, grouping: Calendar.Component, calendar: Calendar) -> Date {
@@ -216,5 +398,37 @@ class UsageCalculator {
         default:
             return calendar.startOfDay(for: date)
         }
+    }
+
+    // MARK: - 按日期分组会话数据（供 HistoryStore 使用）
+    // Uses local timezone for date formatting (matches ccusage behavior)
+
+    func groupSessionsByDate(_ sessions: [ParsedSession]) async -> [String: (input: Int, output: Int, cacheCreate: Int, cacheRead: Int, cost: Double, count: Int, models: Set<String>)] {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current  // Local timezone (matches ccusage)
+
+        var dailyData: [String: (input: Int, output: Int, cacheCreate: Int, cacheRead: Int, cost: Double, count: Int, models: Set<String>)] = [:]
+
+        for session in sessions {
+            for message in session.messages {
+                let dateKey = formatter.string(from: message.timestamp)
+                let messageCost = await message.costAsync()
+
+                var data = dailyData[dateKey] ?? (0, 0, 0, 0, 0, 0, Set<String>())
+                data.input += message.inputTokens
+                data.output += message.outputTokens
+                data.cacheCreate += message.cacheCreationTokens
+                data.cacheRead += message.cacheReadTokens
+                data.cost += messageCost
+                data.count += 1
+                if let model = message.model {
+                    data.models.insert(model)
+                }
+                dailyData[dateKey] = data
+            }
+        }
+
+        return dailyData
     }
 }

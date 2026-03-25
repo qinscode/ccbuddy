@@ -4,7 +4,7 @@ enum Constants {
     // MARK: - App Info
 
     static let appName = "CCBuddy"
-    static let appVersion = "1.0.0"
+    static let appVersion = "2.0"
     static let appBundleIdentifier = "com.ccusage.app"
 
     // MARK: - Claude Code

@@ -46,28 +46,33 @@ struct PopoverView: View {
                     .fill(Color.primary.opacity(0.1))
                     .frame(height: 0.5)
 
-                // Mode-specific content
-                if viewModel.usageMode == .proMax {
-                    proMaxContent
+                // Show loading state if data hasn't been loaded yet
+                if viewModel.lastUpdated == nil && viewModel.isLoading {
+                    loadingContent
                 } else {
-                    apiContent
+                    // Mode-specific content
+                    if viewModel.usageMode == .proMax {
+                        proMaxContent
+                    } else {
+                        apiContent
+                    }
+
+                    // Usage Charts
+                    chartsSection
+
+                    // Subtle Divider
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.08))
+                        .frame(height: 0.5)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 4)
+
+                    // Action Buttons
+                    actionButtons
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        .padding(.bottom, 14)
                 }
-
-                // Usage Charts
-                chartsSection
-
-                // Subtle Divider
-                Rectangle()
-                    .fill(Color.primary.opacity(0.08))
-                    .frame(height: 0.5)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 4)
-
-                // Action Buttons
-                actionButtons
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 14)
             }
         }
         .frame(width: 320)
@@ -77,6 +82,28 @@ struct PopoverView: View {
                 .stroke(Color.white.opacity(colorScheme == .dark ? 0.15 : 0.3), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.2), radius: 20, x: 0, y: 10)
+    }
+
+    // MARK: - Loading Content
+
+    private var loadingContent: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(0.8)
+                .padding(.top, 40)
+
+            Text("Loading usage data...")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            Spacer()
+
+            // Action Buttons (still available during loading)
+            actionButtons
+                .padding(.horizontal, 12)
+                .padding(.bottom, 14)
+        }
+        .frame(height: 300)
     }
 
     // MARK: - Visual Effect Material
@@ -114,14 +141,8 @@ struct PopoverView: View {
                 StatRow(icon: "arrow.up.right.circle.fill", color: .orange, title: "Projected Cost", value: viewModel.formattedProjectedCost, fontSize: viewModel.fontSize)
                 StatRow(icon: "flame.fill", color: .red, title: "Burn Rate", value: viewModel.currentStats.formattedBurnRate, fontSize: viewModel.fontSize)
 
-                VStack(spacing: 4) {
-                    ForEach(Array(modelDisplayList.enumerated()), id: \.element) { index, modelName in
-                        if index == 0 {
-                            StatRow(icon: "cpu.fill", color: .purple, title: "Model", value: modelName, fontSize: viewModel.fontSize)
-                        } else {
-                            StatRowNoIcon(value: modelName, fontSize: viewModel.fontSize)
-                        }
-                    }
+                if !modelDisplayList.isEmpty {
+                    StatRow(icon: "cpu.fill", color: .purple, title: "Model", value: modelDisplayList.joined(separator: ", "), fontSize: viewModel.fontSize)
                 }
             }
             .padding(.horizontal, 16)
@@ -139,14 +160,8 @@ struct PopoverView: View {
             StatRow(icon: "calendar.badge.clock", color: .pink, title: "This Month", value: viewModel.formattedMonthCost, fontSize: viewModel.fontSize)
             StatRow(icon: "dollarsign.circle.fill", color: .green, title: "All Time", value: viewModel.formattedAllTimeCost, fontSize: viewModel.fontSize)
 
-            VStack(spacing: 4) {
-                ForEach(Array(modelDisplayList.enumerated()), id: \.element) { index, modelName in
-                    if index == 0 {
-                        StatRow(icon: "cpu.fill", color: .purple, title: "Model", value: modelName, fontSize: viewModel.fontSize)
-                    } else {
-                        StatRowNoIcon(value: modelName, fontSize: viewModel.fontSize)
-                    }
-                }
+            if !modelDisplayList.isEmpty {
+                StatRow(icon: "cpu.fill", color: .purple, title: "Model", value: modelDisplayList.joined(separator: ", "), fontSize: viewModel.fontSize)
             }
         }
         .padding(.horizontal, 16)
@@ -290,14 +305,18 @@ struct PopoverView: View {
                             endPoint: .top
                         )
                     )
-                    .annotation(position: .top) {
-                        Text(chartAnnotation(for: point))
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
+                    .annotation(position: .top, spacing: annotationOffset(for: point)) {
+                        if chartYValue(for: point) > 0 {
+                            Text(chartAnnotation(for: point))
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
                     }
                 }
                 .chartXAxis {
-                    AxisMarks(values: historyData.map { $0.periodStart }) { value in
+                    AxisMarks(values: xAxisValues) { value in
                         if let date = value.as(Date.self) {
                             AxisValueLabel {
                                 Text(axisLabel(for: date))
@@ -380,6 +399,42 @@ struct PopoverView: View {
         }
     }
 
+    /// Calculate X-axis label values to prevent overlapping
+    private var xAxisValues: [Date] {
+        let data = historyData
+        guard !data.isEmpty else { return [] }
+
+        let maxLabels: Int
+        switch selectedHistoryRange {
+        case .daily:
+            maxLabels = 6  // 每日最多显示 6 个标签
+        case .weekly:
+            maxLabels = 5  // 每周最多显示 5 个标签
+        case .monthly:
+            maxLabels = 6  // 每月最多显示 6 个标签
+        }
+
+        let count = data.count
+        if count <= maxLabels {
+            return data.map { $0.periodStart }
+        }
+
+        // 计算步长，确保均匀分布
+        let step = max(1, (count - 1) / (maxLabels - 1))
+        var values: [Date] = []
+
+        for i in stride(from: 0, to: count, by: step) {
+            values.append(data[i].periodStart)
+        }
+
+        // 确保最后一个日期（今天）总是显示
+        if let last = data.last?.periodStart, !values.contains(last) {
+            values.append(last)
+        }
+
+        return values
+    }
+
     private var historyTotalTokens: Int {
         historyData.reduce(0) { $0 + $1.totalTokens }
     }
@@ -401,6 +456,79 @@ struct PopoverView: View {
             return point.formattedTokens
         } else {
             return String(format: "$%.1f", point.totalCost)
+        }
+    }
+
+    /// Calculate annotation offset to prevent overlapping labels on adjacent bars (Daily only)
+    private func annotationOffset(for point: UsageHistoryPoint) -> CGFloat {
+        // Only apply collision avoidance for daily view
+        guard selectedHistoryRange == .daily else { return 2 }
+
+        let data = historyData
+        guard let index = data.firstIndex(where: { $0.id == point.id }) else { return 2 }
+
+        let currentValue = chartYValue(for: point)
+        guard currentValue > 0 else { return 2 }
+
+        // Get max value for normalization
+        let maxValue = data.map { chartYValue(for: $0) }.max() ?? 1
+        guard maxValue > 0 else { return 2 }
+
+        // Find the minimum difference with adjacent non-zero bars
+        var minDiffRatio: Double = 1.0
+
+        // Check left neighbor
+        if index > 0 {
+            let leftValue = chartYValue(for: data[index - 1])
+            if leftValue > 0 {
+                let diffRatio = abs(currentValue - leftValue) / maxValue
+                minDiffRatio = min(minDiffRatio, diffRatio)
+            }
+        }
+
+        // Check right neighbor
+        if index < data.count - 1 {
+            let rightValue = chartYValue(for: data[index + 1])
+            if rightValue > 0 {
+                let diffRatio = abs(currentValue - rightValue) / maxValue
+                minDiffRatio = min(minDiffRatio, diffRatio)
+            }
+        }
+
+        // Count position among non-zero bars for alternating pattern
+        var nonZeroIndex = 0
+        for i in 0..<index {
+            if chartYValue(for: data[i]) > 0 {
+                nonZeroIndex += 1
+            }
+        }
+
+        // Only apply offset to odd-positioned bars
+        guard nonZeroIndex % 2 == 1 else { return 2 }
+
+        // Calculate dynamic offset with more granular levels based on difference ratio
+        // diffRatio: 0.0 - 1.0 (0% to 100% of max value difference)
+        switch minDiffRatio {
+        case 0..<0.05:
+            return 20  // Almost identical heights
+        case 0.05..<0.10:
+            return 18
+        case 0.10..<0.15:
+            return 16
+        case 0.15..<0.20:
+            return 14
+        case 0.20..<0.25:
+            return 12
+        case 0.25..<0.30:
+            return 10
+        case 0.30..<0.40:
+            return 8
+        case 0.40..<0.50:
+            return 6
+        case 0.50..<0.60:
+            return 4
+        default:
+            return 2   // Large difference, minimal offset needed
         }
     }
 

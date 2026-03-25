@@ -4,9 +4,34 @@ class JSONLParser {
     private let fileManager = FileManager.default
     private let decoder = JSONDecoder()
 
-    // Claude data directory
+    // Claude data directories (matches ccusage: both ~/.claude and ~/.config/claude)
+    var claudeDataPaths: [URL] {
+        var paths: [URL] = []
+        let home = fileManager.homeDirectoryForCurrentUser
+
+        // New default: ~/.config/claude/projects
+        let configPath = home
+            .appendingPathComponent(".config")
+            .appendingPathComponent("claude")
+            .appendingPathComponent("projects")
+        if fileManager.fileExists(atPath: configPath.path) {
+            paths.append(configPath)
+        }
+
+        // Old default: ~/.claude/projects
+        let claudePath = home
+            .appendingPathComponent(".claude")
+            .appendingPathComponent("projects")
+        if fileManager.fileExists(atPath: claudePath.path) {
+            paths.append(claudePath)
+        }
+
+        return paths
+    }
+
+    // For backward compatibility
     var claudeDataPath: URL {
-        fileManager.homeDirectoryForCurrentUser
+        claudeDataPaths.first ?? fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude")
             .appendingPathComponent("projects")
     }
@@ -16,60 +41,75 @@ class JSONLParser {
     func parseAllSessions() -> [ParsedSession] {
         var sessions: [ParsedSession] = []
 
-        guard fileManager.fileExists(atPath: claudeDataPath.path) else {
-            print("Claude data directory not found: \(claudeDataPath.path)")
-            return sessions
-        }
-
-        do {
-            let projectDirs = try fileManager.contentsOfDirectory(
-                at: claudeDataPath,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles]
-            )
-
-            for projectDir in projectDirs {
-                var isDirectory: ObjCBool = false
-                if fileManager.fileExists(atPath: projectDir.path, isDirectory: &isDirectory),
-                   isDirectory.boolValue {
-                    let projectSessions = parseProjectSessions(at: projectDir)
-                    sessions.append(contentsOf: projectSessions)
-                }
+        for dataPath in claudeDataPaths {
+            guard fileManager.fileExists(atPath: dataPath.path) else {
+                continue
             }
-        } catch {
-            print("Error reading projects directory: \(error)")
+
+            do {
+                let projectDirs = try fileManager.contentsOfDirectory(
+                    at: dataPath,
+                    includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles]
+                )
+
+                for projectDir in projectDirs {
+                    var isDirectory: ObjCBool = false
+                    if fileManager.fileExists(atPath: projectDir.path, isDirectory: &isDirectory),
+                       isDirectory.boolValue {
+                        let projectSessions = parseProjectSessions(at: projectDir)
+                        sessions.append(contentsOf: projectSessions)
+                    }
+                }
+            } catch {
+                print("Error reading projects directory: \(error)")
+            }
         }
 
         return sessions
     }
 
-    // MARK: - Parse sessions in a project
+    // MARK: - Parse sessions in a project (recursively including subagents)
 
     private func parseProjectSessions(at projectDir: URL) -> [ParsedSession] {
         var sessions: [ParsedSession] = []
+        let projectPath = projectDir.lastPathComponent
 
-        do {
-            let files = try fileManager.contentsOfDirectory(
-                at: projectDir,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: [.skipsHiddenFiles]
-            )
+        // Recursively find all .jsonl files (matches ccusage's glob pattern: **/*.jsonl)
+        let jsonlFiles = findAllJsonlFiles(in: projectDir)
 
-            let jsonlFiles = files.filter { $0.pathExtension == "jsonl" }
-
-            for file in jsonlFiles {
-                if let session = parseSessionFile(at: file, projectPath: projectDir.lastPathComponent) {
-                    sessions.append(session)
-                }
+        for file in jsonlFiles {
+            if let session = parseSessionFile(at: file, projectPath: projectPath) {
+                sessions.append(session)
             }
-        } catch {
-            print("Error reading project directory \(projectDir): \(error)")
         }
 
         return sessions
     }
 
-    // MARK: - Parse a single session file
+    // MARK: - Recursively find all JSONL files (matches ccusage's **/*.jsonl glob)
+
+    private func findAllJsonlFiles(in directory: URL) -> [URL] {
+        var result: [URL] = []
+
+        guard let enumerator = fileManager.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return result
+        }
+
+        for case let fileURL as URL in enumerator {
+            if fileURL.pathExtension == "jsonl" {
+                result.append(fileURL)
+            }
+        }
+
+        return result
+    }
+
+    // MARK: - Parse a single session file (matches ccusage logic exactly)
 
     func parseSessionFile(at url: URL, projectPath: String) -> ParsedSession? {
         guard let content = try? String(contentsOf: url, encoding: .utf8) else {
@@ -77,8 +117,10 @@ class JSONLParser {
         }
 
         let lines = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
-        // Deduplicate by messageId:requestId (matches ccusage)
-        // Keep the first record (contains accurate usage)
+
+        // Deduplication: messageId:requestId (matches ccusage)
+        // Only dedup when BOTH messageId AND requestId exist
+        // If either is missing, do NOT dedup (add all records)
         var processedHashes = Set<String>()
         var messages: [ParsedMessage] = []
         var sessionId = url.deletingPathExtension().lastPathComponent
@@ -92,37 +134,51 @@ class JSONLParser {
             guard let data = line.data(using: .utf8) else { continue }
 
             do {
-                let claudeMessage = try decoder.decode(ClaudeMessage.self, from: data)
-
-                // Update sessionId when present
-                if let sid = claudeMessage.sessionId {
-                    sessionId = sid
-                }
-
-                // Only handle assistant messages (carry usage info)
-                guard claudeMessage.type == "assistant",
-                      let messageContent = claudeMessage.message,
-                      let usage = messageContent.usage,
-                      let messageId = messageContent.id else {
+                // Parse as generic JSON first (matches ccusage's JSON.parse)
+                guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                     continue
                 }
 
-                // Dedup logic (same as ccusage)
-                // Dedup only when both messageId and requestId exist
-                // If requestId is missing, do not dedup
-                if let requestId = claudeMessage.requestId {
-                    let uniqueHash = "\(messageId):\(requestId)"
+                // Extract message object
+                guard let messageObj = json["message"] as? [String: Any] else {
+                    continue
+                }
+
+                // Extract usage object (REQUIRED - matches ccusage schema)
+                guard let usageObj = messageObj["usage"] as? [String: Any] else {
+                    continue
+                }
+
+                // input_tokens and output_tokens are REQUIRED (matches ccusage schema)
+                guard let inputTokens = usageObj["input_tokens"] as? Int else {
+                    continue
+                }
+                guard let outputTokens = usageObj["output_tokens"] as? Int else {
+                    continue
+                }
+
+                // Update sessionId when present
+                if let sid = json["sessionId"] as? String {
+                    sessionId = sid
+                }
+
+                // Dedup logic (EXACTLY matches ccusage)
+                // Only dedup when BOTH messageId AND requestId exist
+                let messageId = messageObj["id"] as? String
+                let requestId = json["requestId"] as? String
+
+                if let msgId = messageId, let reqId = requestId {
+                    let uniqueHash = "\(msgId):\(reqId)"
                     if processedHashes.contains(uniqueHash) {
                         continue
                     }
                     processedHashes.insert(uniqueHash)
                 }
-                // If no requestId, add directly (no dedup)
+                // If either is nil, do NOT dedup - add the record
 
                 // Parse timestamp
                 var timestamp = Date()
-                if let ts = claudeMessage.timestamp {
-                    // Try multiple formats
+                if let ts = json["timestamp"] as? String {
                     if let date = dateFormatter.date(from: ts) {
                         timestamp = date
                     } else {
@@ -142,20 +198,26 @@ class JSONLParser {
                     endTime = timestamp
                 }
 
+                // Extract optional fields
+                let model = messageObj["model"] as? String
+                let cacheCreationTokens = usageObj["cache_creation_input_tokens"] as? Int ?? 0
+                let cacheReadTokens = usageObj["cache_read_input_tokens"] as? Int ?? 0
+                let uuid = json["uuid"] as? String ?? UUID().uuidString
+
                 let parsedMessage = ParsedMessage(
-                    uuid: claudeMessage.uuid ?? UUID().uuidString,
+                    uuid: uuid,
                     timestamp: timestamp,
-                    model: messageContent.model,
-                    inputTokens: usage.inputTokens ?? 0,
-                    outputTokens: usage.outputTokens ?? 0,
-                    cacheCreationTokens: usage.cacheCreationInputTokens ?? 0,
-                    cacheReadTokens: usage.cacheReadInputTokens ?? 0
+                    model: model,
+                    inputTokens: inputTokens,
+                    outputTokens: outputTokens,
+                    cacheCreationTokens: cacheCreationTokens,
+                    cacheReadTokens: cacheReadTokens
                 )
 
                 messages.append(parsedMessage)
 
             } catch {
-                // Ignore parse errors and continue
+                // Skip invalid JSON lines (matches ccusage)
                 continue
             }
         }
@@ -183,16 +245,37 @@ class JSONLParser {
             .sorted { $0.timestamp < $1.timestamp }
     }
 
-    // MARK: - Get today's data
+    // MARK: - Get today's data (matches ccusage: group by formatted date string in local timezone)
 
     func getTodayMessages() -> [ParsedMessage] {
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: Date())
+        // ccusage uses Intl.DateTimeFormat with local timezone to format dates
+        // Then groups by the formatted date string (YYYY-MM-DD)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        dateFormatter.timeZone = TimeZone.current  // Local timezone (matches ccusage)
+
+        let todayString = dateFormatter.string(from: Date())
         let sessions = parseAllSessions()
 
         return sessions
             .flatMap { $0.messages }
-            .filter { $0.timestamp >= startOfDay }
+            .filter { dateFormatter.string(from: $0.timestamp) == todayString }
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    // MARK: - Get messages for a specific date (matches ccusage date grouping)
+
+    func getMessagesForDate(_ date: Date) -> [ParsedMessage] {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        dateFormatter.timeZone = TimeZone.current
+
+        let targetDateString = dateFormatter.string(from: date)
+        let sessions = parseAllSessions()
+
+        return sessions
+            .flatMap { $0.messages }
+            .filter { dateFormatter.string(from: $0.timestamp) == targetDateString }
             .sorted { $0.timestamp < $1.timestamp }
     }
 }
